@@ -1,0 +1,10 @@
+{
+  "arena_user_slug": "your-arena-username",
+  "arena_personal_token": "your-personal-access-token-here",
+  "output_dir": "output",
+  "raw_data_filename": "arena_data.json",
+  "processed_data_filename": "processed_blocks.json",
+  "images_dir": "images",
+  "output_typst_file": "cards.typ",
+  "min_updated_date": null
+}
