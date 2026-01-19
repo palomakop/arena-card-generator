@@ -6,5 +6,7 @@
   "processed_data_filename": "processed_blocks.json",
   "images_dir": "images",
   "output_typst_file": "cards.typ",
-  "min_updated_date": null
+  "min_updated_date": null,
+  "api_delay_seconds": 3.0,
+  "max_retries": 3
 }

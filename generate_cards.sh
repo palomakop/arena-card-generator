@@ -3,6 +3,27 @@
 
 set -e  # exit on error
 
+#!/bin/bash
+
+echo "setting up python environment"
+echo "================================"
+echo ""
+
+# Check if venv exists
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv venv
+    source venv/bin/activate
+    
+    # Install dependencies if requirements.txt exists
+    if [ -f "requirements.txt" ]; then
+        echo "Installing dependencies..."
+        pip install -r requirements.txt
+    fi
+else
+    source venv/bin/activate
+fi
+
 echo "generating are.na idea cards"
 echo "================================"
 echo ""

@@ -5,7 +5,9 @@ download and process are.na data: deduplicate blocks, download images, create js
 
 import json
 import os
+import ssl
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 import urllib.request
@@ -23,6 +25,35 @@ def load_config():
         return json.load(f)
 
 CONFIG = load_config()
+API_DELAY = CONFIG['api_delay_seconds']
+MAX_RETRIES = CONFIG['max_retries']
+
+def api_request(url, token):
+    """make an API request with retries for transient errors."""
+    req = urllib.request.Request(url)
+    req.add_header('Authorization', f'Bearer {token}')
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # rate limited - don't retry, just fail
+                raise
+            elif attempt < MAX_RETRIES - 1:
+                print(f"    retry {attempt + 1}/{MAX_RETRIES} after HTTP {e.code}")
+                time.sleep(API_DELAY)
+            else:
+                raise
+        except (urllib.error.URLError, ssl.SSLError, ConnectionResetError, TimeoutError) as e:
+            if attempt < MAX_RETRIES - 1:
+                print(f"    retry {attempt + 1}/{MAX_RETRIES} after connection error: {e}")
+                time.sleep(API_DELAY)
+            else:
+                raise
+
+    return None
 
 def download_arena_data(user_slug, token, output_path):
     """download user's channels data from are.na api."""
@@ -31,12 +62,9 @@ def download_arena_data(user_slug, token, output_path):
     channels_url = f"https://api.are.na/v2/users/{user_slug}/channels"
     print(f"downloading channel list for user: {user_slug}")
 
-    req = urllib.request.Request(channels_url)
-    req.add_header('Authorization', f'Bearer {token}')
-
     try:
-        with urllib.request.urlopen(req) as response:
-            channels_data = json.loads(response.read().decode())
+        channels_data = api_request(channels_url, token)
+        time.sleep(API_DELAY)
     except Exception as e:
         print(f"error downloading channel list: {e}")
         sys.exit(1)
@@ -57,20 +85,54 @@ def download_arena_data(user_slug, token, output_path):
         # fetch channel data to get block IDs
         # use per=100 to get up to 100 blocks per page (API default is 20)
         channel_url = f"https://api.are.na/v2/channels/{channel_slug}?per=100"
-        req = urllib.request.Request(channel_url)
-        req.add_header('Authorization', f'Bearer {token}')
 
         try:
-            with urllib.request.urlopen(req) as response:
-                channel_data = json.loads(response.read().decode())
+            channel_data = api_request(channel_url, token)
+        except Exception as e:
+            print(f"    warning: failed to download {channel_title}: {e}")
+            time.sleep(API_DELAY)
+            continue
 
-                # check if we need more pages
-                total_blocks = channel_data.get('length', 0)
-                contents = channel_data.get('contents', [])
-                blocks_received = len(contents)
+        time.sleep(API_DELAY)
 
-                # collect block IDs from first page
-                for block in contents:
+        # check if we need more pages
+        total_blocks = channel_data.get('length', 0)
+        contents = channel_data.get('contents', [])
+        blocks_received = len(contents)
+
+        # collect block IDs from first page
+        for block in contents:
+            block_id = block.get('id')
+            if block_id:
+                if block_id not in block_to_channels:
+                    block_to_channels[block_id] = []
+                if channel_title not in block_to_channels[block_id]:
+                    block_to_channels[block_id].append(channel_title)
+
+        # fetch remaining pages if needed
+        if blocks_received < total_blocks:
+            print(f"    note: fetching additional pages ({blocks_received}/{total_blocks} blocks)")
+
+            page = 2
+            while blocks_received < total_blocks:
+                page_url = f"https://api.are.na/v2/channels/{channel_slug}?per=100&page={page}"
+
+                try:
+                    page_data = api_request(page_url, token)
+                except Exception as e:
+                    print(f"    warning: failed to fetch page {page}: {e}")
+                    time.sleep(API_DELAY)
+                    break
+
+                time.sleep(API_DELAY)
+
+                page_contents = page_data.get('contents', [])
+
+                if not page_contents:
+                    break
+
+                # collect block IDs from this page
+                for block in page_contents:
                     block_id = block.get('id')
                     if block_id:
                         if block_id not in block_to_channels:
@@ -78,39 +140,9 @@ def download_arena_data(user_slug, token, output_path):
                         if channel_title not in block_to_channels[block_id]:
                             block_to_channels[block_id].append(channel_title)
 
-                # fetch remaining pages if needed
-                if blocks_received < total_blocks:
-                    print(f"    note: fetching additional pages ({blocks_received}/{total_blocks} blocks)")
-
-                    page = 2
-                    while blocks_received < total_blocks:
-                        page_url = f"https://api.are.na/v2/channels/{channel_slug}?per=100&page={page}"
-                        req = urllib.request.Request(page_url)
-                        req.add_header('Authorization', f'Bearer {token}')
-
-                        with urllib.request.urlopen(req) as page_response:
-                            page_data = json.loads(page_response.read().decode())
-                            page_contents = page_data.get('contents', [])
-
-                            if not page_contents:
-                                break
-
-                            # collect block IDs from this page
-                            for block in page_contents:
-                                block_id = block.get('id')
-                                if block_id:
-                                    if block_id not in block_to_channels:
-                                        block_to_channels[block_id] = []
-                                    if channel_title not in block_to_channels[block_id]:
-                                        block_to_channels[block_id].append(channel_title)
-
-                            blocks_received += len(page_contents)
-                            print(f"    page {page}: +{len(page_contents)} blocks ({blocks_received}/{total_blocks})")
-                            page += 1
-
-        except Exception as e:
-            print(f"    warning: failed to download {channel_title}: {e}")
-            continue
+                blocks_received += len(page_contents)
+                print(f"    page {page}: +{len(page_contents)} blocks ({blocks_received}/{total_blocks})")
+                page += 1
 
     # now fetch each unique block individually
     unique_block_ids = list(block_to_channels.keys())
@@ -122,18 +154,16 @@ def download_arena_data(user_slug, token, output_path):
             print(f"  [{i}/{len(unique_block_ids)}] fetching block {block_id}")
 
         block_url = f"https://api.are.na/v2/blocks/{block_id}"
-        req = urllib.request.Request(block_url)
-        req.add_header('Authorization', f'Bearer {token}')
 
         try:
-            with urllib.request.urlopen(req) as response:
-                block_data = json.loads(response.read().decode())
-                # add channel membership to block data
-                block_data['channel_titles'] = block_to_channels[block_id]
-                blocks.append(block_data)
+            block_data = api_request(block_url, token)
+            # add channel membership to block data
+            block_data['channel_titles'] = block_to_channels[block_id]
+            blocks.append(block_data)
         except Exception as e:
             print(f"    warning: failed to fetch block {block_id}: {e}")
-            continue
+
+        time.sleep(API_DELAY)
 
     # save raw data in new format
     data = {'blocks': blocks}

@@ -29,6 +29,7 @@ here are some images of example pages of my PDF output.
    ```bash
    pip3 install "qrcode[pil]"
    ```
+   *note: the generate_cards.sh looks for a local virtual environment and will create one and install the dependency if it doesn't find one.*
 4. **are.na personal access token**
    - sign into https://dev.are.na
    - create a new application or use an existing one
@@ -87,7 +88,7 @@ in your command line, `cd` to the folder where you downloaded this code and run 
 ```
 
 this will:
-- download a payload from are.na of all your channels
+- download data for all blocks in your are.na channels
 - organize all of the blocks and their important data into a new JSON file
    *note: blocks that appear in more than one channel are only included once*
 - download all the original quality images of the blocks into a folder
@@ -164,6 +165,7 @@ edit the typst template section in `generate_typst.py` to change:
 
 - even though the API response to GET a channel from are.na contains block data, i am still doing a GET for each block individually, because i found that those requests contained fresher data (such as recently updated text block contents)
 - markdown -> typst is not fully implemented, just some codes (headings, lists)... could be improved but i probably will just do as needed
+- time delay between api requests to are.na (to avoid tripping rate limiters) is configurable in config.json (as well as max number of retries if an api request returns an error)
 
 
 ## ideas
