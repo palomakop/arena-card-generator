@@ -73,6 +73,13 @@ def format_content_as_typst(content):
     if not content:
         return ""
 
+    # v3 API returns content as dict with markdown/html/plain keys
+    if isinstance(content, dict):
+        content = content.get('markdown') or content.get('plain') or ''
+
+    if not content:
+        return ""
+
     lines = content.split('\n')
     formatted_lines = []
 

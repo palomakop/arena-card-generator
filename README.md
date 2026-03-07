@@ -31,11 +31,9 @@ here are some images of example pages of my PDF output.
    ```
    *note: the generate_cards.sh looks for a local virtual environment and will create one and install the dependency if it doesn't find one.*
 4. **are.na personal access token**
-   - sign into https://dev.are.na
-   - create a new application or use an existing one
-   - copy your personal access token
-
-*note: if this was a "real" application i'd give you a way to authorize it by logging in, but i haven't done that, so you need to make a "dummy" application to get your personal access token.*
+   - go to https://are.na/settings/tokens
+   - create a new personal access token with read-only access
+   - copy the token
 
 ## setup
 
@@ -48,7 +46,7 @@ here are some images of example pages of my PDF output.
    ```json
    {
      "arena_user_slug": "your-arena-username",
-     "arena_personal_token": "your-personal-access-token-here",
+     "arena_access_token": "your-personal-access-token-here",
      ...
    }
    ```
@@ -163,9 +161,10 @@ edit the typst template section in `generate_typst.py` to change:
 
 ## notes
 
+- this uses the are.na API v3
 - even though the API response to GET a channel from are.na contains block data, i am still doing a GET for each block individually, because i found that those requests contained fresher data (such as recently updated text block contents)
 - markdown -> typst is not fully implemented, just some codes (headings, lists)... could be improved but i probably will just do as needed
-- time delay between api requests to are.na (to avoid tripping rate limiters) is configurable in config.json (as well as max number of retries if an api request returns an error)
+- time delay between api requests to are.na (to avoid tripping rate limiters) is configurable in config.json via `api_delay_seconds` (as well as max number of retries via `max_retries`). the default is 0.3 seconds which works for premium members (300 req/min). free tier users may need to increase this to avoid rate limiting.
 
 
 ## ideas

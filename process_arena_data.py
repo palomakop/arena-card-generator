@@ -32,6 +32,7 @@ def api_request(url, token):
     """make an API request with retries for transient errors."""
     req = urllib.request.Request(url)
     req.add_header('Authorization', f'Bearer {token}')
+    req.add_header('User-Agent', 'ArenaCardGenerator/1.0')
 
     for attempt in range(MAX_RETRIES):
         try:
@@ -59,7 +60,7 @@ def download_arena_data(user_slug, token, output_path):
     """download user's channels data from are.na api."""
 
     # first, get the list of channels
-    channels_url = f"https://api.are.na/v2/users/{user_slug}/channels"
+    channels_url = f"https://api.are.na/v3/users/{user_slug}/contents?type=Channel&per=100"
     print(f"downloading channel list for user: {user_slug}")
 
     try:
@@ -70,21 +71,23 @@ def download_arena_data(user_slug, token, output_path):
         sys.exit(1)
 
     # fetch each channel to get block IDs and build block->channels mapping
-    print(f"fetching block IDs from {len(channels_data.get('channels', []))} channels...")
+    # v3 API uses 'data' key for results
+    channels_list = channels_data.get('data', [])
+    print(f"fetching block IDs from {len(channels_list)} channels...")
     block_to_channels = {}  # maps block_id -> list of channel titles
 
-    for i, channel in enumerate(channels_data.get('channels', []), 1):
+    for i, channel in enumerate(channels_list, 1):
         channel_slug = channel.get('slug')
         channel_title = channel.get('title', 'Untitled')
 
         if not channel_slug:
             continue
 
-        print(f"  [{i}/{len(channels_data['channels'])}] {channel_title}")
+        print(f"  [{i}/{len(channels_list)}] {channel_title}")
 
-        # fetch channel data to get block IDs
+        # fetch channel contents to get block IDs
         # use per=100 to get up to 100 blocks per page (API default is 20)
-        channel_url = f"https://api.are.na/v2/channels/{channel_slug}?per=100"
+        channel_url = f"https://api.are.na/v3/channels/{channel_slug}/contents?per=100"
 
         try:
             channel_data = api_request(channel_url, token)
@@ -95,9 +98,10 @@ def download_arena_data(user_slug, token, output_path):
 
         time.sleep(API_DELAY)
 
-        # check if we need more pages
-        total_blocks = channel_data.get('length', 0)
-        contents = channel_data.get('contents', [])
+        # v3 returns contents in 'data' key with pagination info in 'meta'
+        contents = channel_data.get('data', [])
+        meta = channel_data.get('meta', {})
+        has_more_pages = meta.get('has_more_pages', False)
         blocks_received = len(contents)
 
         # collect block IDs from first page
@@ -110,39 +114,39 @@ def download_arena_data(user_slug, token, output_path):
                     block_to_channels[block_id].append(channel_title)
 
         # fetch remaining pages if needed
-        if blocks_received < total_blocks:
-            print(f"    note: fetching additional pages ({blocks_received}/{total_blocks} blocks)")
+        page = 2
+        while has_more_pages:
+            print(f"    fetching page {page}...")
+            page_url = f"https://api.are.na/v3/channels/{channel_slug}/contents?per=100&page={page}"
 
-            page = 2
-            while blocks_received < total_blocks:
-                page_url = f"https://api.are.na/v2/channels/{channel_slug}?per=100&page={page}"
-
-                try:
-                    page_data = api_request(page_url, token)
-                except Exception as e:
-                    print(f"    warning: failed to fetch page {page}: {e}")
-                    time.sleep(API_DELAY)
-                    break
-
+            try:
+                page_data = api_request(page_url, token)
+            except Exception as e:
+                print(f"    warning: failed to fetch page {page}: {e}")
                 time.sleep(API_DELAY)
+                break
 
-                page_contents = page_data.get('contents', [])
+            time.sleep(API_DELAY)
 
-                if not page_contents:
-                    break
+            page_contents = page_data.get('data', [])
+            meta = page_data.get('meta', {})
+            has_more_pages = meta.get('has_more_pages', False)
 
-                # collect block IDs from this page
-                for block in page_contents:
-                    block_id = block.get('id')
-                    if block_id:
-                        if block_id not in block_to_channels:
-                            block_to_channels[block_id] = []
-                        if channel_title not in block_to_channels[block_id]:
-                            block_to_channels[block_id].append(channel_title)
+            if not page_contents:
+                break
 
-                blocks_received += len(page_contents)
-                print(f"    page {page}: +{len(page_contents)} blocks ({blocks_received}/{total_blocks})")
-                page += 1
+            # collect block IDs from this page
+            for block in page_contents:
+                block_id = block.get('id')
+                if block_id:
+                    if block_id not in block_to_channels:
+                        block_to_channels[block_id] = []
+                    if channel_title not in block_to_channels[block_id]:
+                        block_to_channels[block_id].append(channel_title)
+
+            blocks_received += len(page_contents)
+            print(f"    page {page}: +{len(page_contents)} blocks ({blocks_received} total)")
+            page += 1
 
     # now fetch each unique block individually
     unique_block_ids = list(block_to_channels.keys())
@@ -153,7 +157,7 @@ def download_arena_data(user_slug, token, output_path):
         if i % 10 == 0 or i == len(unique_block_ids):
             print(f"  [{i}/{len(unique_block_ids)}] fetching block {block_id}")
 
-        block_url = f"https://api.are.na/v2/blocks/{block_id}"
+        block_url = f"https://api.are.na/v3/blocks/{block_id}"
 
         try:
             block_data = api_request(block_url, token)
@@ -339,8 +343,8 @@ def process_arena_data(data, output_dir, images_subdir, min_updated_date=None):
         # handle image if present (for image, media, link, attachment types)
         image = block.get('image')
         if image and isinstance(image, dict):
-            original = image.get('original', {})
-            image_url = original.get('url')
+            # v3 uses 'src' directly, v2 used 'original.url'
+            image_url = image.get('src') or image.get('original', {}).get('url')
             filename = image.get('filename', 'image')
 
             if image_url:
@@ -357,8 +361,12 @@ def process_arena_data(data, output_dir, images_subdir, min_updated_date=None):
         # handle text content (for text blocks)
         content = block.get('content')
         if content:
-            # decode html entities (e.g., &gt; -> >, &lt; -> <, &amp; -> &)
-            block_data['content'] = html.unescape(content)
+            # v3 API returns content as dict with markdown/html/plain keys
+            if isinstance(content, dict):
+                content = content.get('markdown') or content.get('plain') or ''
+            if content:
+                # decode html entities (e.g., &gt; -> >, &lt; -> <, &amp; -> &)
+                block_data['content'] = html.unescape(content)
 
         blocks_list.append(block_data)
 
@@ -375,10 +383,11 @@ def process_arena_data(data, output_dir, images_subdir, min_updated_date=None):
     return blocks_list
 
 if __name__ == "__main__":
-    # get api token from config
-    token = CONFIG.get('arena_personal_token')
+    # get personal access token from config
+    token = CONFIG.get('arena_access_token')
     if not token:
-        print("error: arena_personal_token not set in config.json")
+        print("error: arena_access_token not set in config.json")
+        print("create a personal access token at https://are.na/settings/tokens")
         sys.exit(1)
 
     # setup paths

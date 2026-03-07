@@ -1,6 +1,6 @@
 {
   "arena_user_slug": "your-arena-username",
-  "arena_personal_token": "your-personal-access-token-here",
+  "arena_access_token": "your-personal-access-token-here",
   "output_dir": "output",
   "raw_data_filename": "arena_data.json",
   "processed_data_filename": "processed_blocks.json",
