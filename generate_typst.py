@@ -322,6 +322,153 @@ def generate_typst_file(blocks_file, images_dir, output_file):
 
     return output_path
 
+def generate_single_card_typst(blocks_file, images_dir, output_file):
+    """generate typst file with one card per page for image export."""
+
+    # load blocks
+    with open(blocks_file, 'r') as f:
+        blocks = json.load(f)
+
+    print(f"generating single-card typst layout for {len(blocks)} blocks...")
+
+    # generate typst header - page size matches card size
+    typst_code = '''// generated single cards from are.na data (for image export)
+
+#set page(
+  width: 3.5in,
+  height: 4.5in,
+  margin: 0pt,
+)
+
+#set text(
+  font: "Arial",
+  size: 11pt,
+)
+
+// card dimensions
+#let card-width = 3.5in
+#let card-height = 4.5in
+
+// card component (same as multi-page version)
+#let card(
+  title: none,
+  img-path: none,
+  content: none,
+  source-url: none,
+  source-url-display: none,
+  channels: (),
+  qr-code: none,
+) = {
+  let img-height = if source-url != none { 2in } else { 2.5in }
+
+  box(
+    width: card-width,
+    height: card-height,
+    stroke: 0.5pt + luma(225),
+    inset: 0.3in,
+  )[
+    #v(0pt)
+
+    #if title != none [
+      #text(weight: "bold", size: 12pt)[#title]
+      #v(0.1in)
+    ]
+
+    #if img-path != none [
+      #box(
+        width: 100%,
+        height: img-height,
+      )[
+        #align(center + horizon)[
+          #image(img-path, fit: "contain", width: 100%, height: 100%)
+        ]
+      ]
+    ] else if content != none [
+      #align(left + top)[
+        #content
+      ]
+    ]
+
+    #v(1fr)
+
+    #if source-url != none [
+      #v(0.1in)
+      #text(size: 9pt, fill: blue)[
+        #link(source-url)[#if source-url-display != none [#source-url-display] else [#source-url]]
+      ]
+    ]
+
+    #v(0.1in)
+
+    #line(length: 100%, stroke: 0.5pt + luma(200))
+    #v(0.05in)
+    #grid(
+      columns: (1fr, auto),
+      align: (left + top, right),
+      text(size: 9pt, fill: gray)[
+        #channels.map(ch => [● #ch]).join(linebreak())
+      ],
+      if qr-code != none [
+        #image(qr-code, width: 0.4in, height: 0.4in, scaling: "pixelated")
+      ]
+    )
+  ]
+}
+
+// generate cards (one per page)
+'''
+
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # generate one card per page
+    for i, block in enumerate(blocks):
+        card_code = generate_card(block, images_dir, output_path.parent)
+        # add # prefix for standalone function call (in grid layout it's implicit)
+        typst_code += f"\n#{card_code.strip()}\n"
+
+        # add page break if not last card
+        if i < len(blocks) - 1:
+            typst_code += "\n#pagebreak()\n"
+
+    # write to file
+    with open(output_path, 'w') as f:
+        f.write(typst_code)
+
+    print(f"generated single-card typst file: {output_path}")
+
+    return output_path
+
+def generate_card_index(blocks_file, output_file):
+    """generate JSON index mapping card filenames to block URLs."""
+
+    with open(blocks_file, 'r') as f:
+        blocks = json.load(f)
+
+    index = []
+    for i, block in enumerate(blocks):
+        block_id = block.get('id')
+        # sequential filename matching typst output (zero-padded)
+        filename = f"card_{i + 1:03d}.jpg"
+        url = f"https://www.are.na/block/{block_id}" if block_id else None
+
+        entry = {
+            "filename": filename,
+            "block_id": block_id,
+            "url": url,
+            "title": block.get('title'),
+            "channels": block.get('channels', [])
+        }
+        index.append(entry)
+
+    output_path = Path(output_file)
+    with open(output_path, 'w') as f:
+        json.dump(index, f, indent=2)
+
+    print(f"generated card index: {output_path} ({len(index)} cards)")
+
+    return output_path
+
 if __name__ == "__main__":
     output_dir = Path(CONFIG['output_dir'])
     blocks_file = output_dir / CONFIG['processed_data_filename']
@@ -332,4 +479,15 @@ if __name__ == "__main__":
         print(f"error: {blocks_file} not found. run process_arena_data.py first.")
         sys.exit(1)
 
+    # generate 4-per-page layout for printing
     generate_typst_file(str(blocks_file), str(images_dir), str(output_file))
+
+    # generate single-card-per-page layout for image export
+    single_card_file = output_dir / "cards_single.typ"
+    generate_single_card_typst(str(blocks_file), str(images_dir), str(single_card_file))
+
+    # generate card index JSON (in card_images folder so it stays with the images)
+    card_images_dir = output_dir / "card_images"
+    card_images_dir.mkdir(exist_ok=True)
+    card_index_file = card_images_dir / "card_index.json"
+    generate_card_index(str(blocks_file), str(card_index_file))

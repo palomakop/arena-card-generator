@@ -90,11 +90,13 @@ this will:
 - organize all of the blocks and their important data into a new JSON file
    *note: blocks that appear in more than one channel are only included once*
 - download all the original quality images of the blocks into a folder
-- generate a typst layout file (`.typ`)
 - if the QR code library is installed, it will make little QR codes that link to the blocks on are.na so you can jump back into the digital realm if you need to (useful for video and link blocks that lead to more material that we can't include in the card)
-- use typst to compile the layout into an actual PDF that you can print out
+- generate typst layout files and compile them into:
+  - **`cards.pdf`** - 4-up layout for printing on 8.5x11" paper
+  - **`card_images/`** - individual card images (150dpi JPEGs) - a virtual deck
+- generate a JSON index mapping card images to are.na block URLs
 
-you should get a file called `cards.pdf` that will be the actual printable file. if you want each card to be separate, make sure to print them single-sided!
+if you want to print the cards, use `cards.pdf` and print single-sided so each card is separate.
 
 ### step by step
 
@@ -122,8 +124,17 @@ all files are created in the `output/` directory:
 - `arena_data.json` - raw API response from are.na
 - `processed_blocks.json` - cleaned and deduplicated blocks
 - `images/` - all downloaded images (named by block ID)
-- `cards.typ` - typst source file
-- `cards.pdf` - printable PDF file
+- `cards.typ` - typst source file (4 cards per page for printing)
+- `cards.pdf` - printable PDF file (8.5x11" pages)
+- `cards_single.typ` - typst source file (1 card per page for image export)
+- `card_images/` - individual card images as JPEGs (150dpi, with #f9f9f0 paper color overlay), plus `card_index.json`
+
+the `card_index.json` file contains an array of objects with:
+- `filename` - the card image filename (e.g., `card_001.jpg`)
+- `block_id` - the are.na block ID
+- `url` - direct link to the block on are.na
+- `title` - block title (if any)
+- `channels` - list of channels the block appears in
 
 ## card layout
 
