@@ -93,7 +93,7 @@ this will:
 - if the QR code library is installed, it will make little QR codes that link to the blocks on are.na so you can jump back into the digital realm if you need to (useful for video and link blocks that lead to more material that we can't include in the card)
 - generate typst layout files and compile them into:
   - **`cards.pdf`** - 4-up layout for printing on 8.5x11" paper
-  - **`card_images/`** - individual card images (150dpi JPEGs) - a virtual deck
+  - **`card_images/`** - individual card images (150dpi JPEGs) - a virtual deck for use in [weird web things](https://lab.palomakop.tv/ideas)
 - generate a JSON index mapping card images to are.na block URLs
 
 if you want to print the cards, use `cards.pdf` and print single-sided so each card is separate.
